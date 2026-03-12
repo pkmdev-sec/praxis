@@ -4,6 +4,8 @@ import {
   suggestLevel,
   injectKeyword,
   getKeywordMap,
+  autoInjectByComplexity,
+  batchAutoInject,
 } from '../lib/thinking-keywords.mjs';
 
 describe('detectThinkingLevel', () => {
@@ -139,5 +141,169 @@ describe('getKeywordMap', () => {
     map1.newKey = 'test';
     const map2 = getKeywordMap();
     expect(map2).not.toHaveProperty('newKey');
+  });
+});
+
+// P1 ENHANCEMENT TESTS: Auto-inject by complexity
+describe('autoInjectByComplexity', () => {
+
+  it('injects appropriate keyword based on complexity score', () => {
+    const low = autoInjectByComplexity('Simple question', 2);
+    expect(low.modified).toBe(false); // complexity 2 doesn't need thinking
+
+    const medium = autoInjectByComplexity('Fix the bug', 5);
+    expect(medium.modified).toBe(true);
+    expect(medium.injectedKeyword).toBe('think');
+
+    const high = autoInjectByComplexity('Debug race condition', 8);
+    expect(high.modified).toBe(true);
+    expect(high.injectedKeyword).toBe('megathink');
+
+    const max = autoInjectByComplexity('Design distributed system', 10);
+    expect(max.modified).toBe(true);
+    expect(max.injectedKeyword).toBe('ultrathink');
+  });
+
+  it('does not inject if existing keyword is sufficient', () => {
+    const result = autoInjectByComplexity('think carefully Fix the bug', 5);
+    expect(result.modified).toBe(false);
+    expect(result.existingKeyword).toBe('think');
+  });
+
+  it('upgrades existing keyword when complexity warrants it', () => {
+    const result = autoInjectByComplexity('think step by step Design complex system', 9);
+    expect(result.modified).toBe(true);
+    expect(result.existingKeyword).toBe('think');
+    expect(result.injectedKeyword).toBe('ultrathink');
+  });
+
+  it('respects upgrade option', () => {
+    const noUpgrade = autoInjectByComplexity('think carefully Complex task', 9, { upgrade: false });
+    expect(noUpgrade.modified).toBe(false);
+  });
+
+  it('does not force inject if existing is same level', () => {
+    const result = autoInjectByComplexity('think carefully Moderate task', 5, { forceInject: true });
+    // Should still be false since existing is same level and forceInject doesn't override sufficient keywords
+    expect(result.modified).toBe(false);
+  });
+
+  it('provides reason for decision', () => {
+    const result = autoInjectByComplexity('Task', 5);
+    expect(result.reason).toBeDefined();
+    expect(typeof result.reason).toBe('string');
+  });
+
+  // Edge case: empty prompt
+  it('handles empty prompt', () => {
+    const result = autoInjectByComplexity('', 5);
+    expect(result.modified).toBe(false);
+    expect(result.reason).toBe('Empty prompt');
+  });
+
+  // Edge case: null/undefined prompt
+  it('handles null/undefined prompt', () => {
+    expect(() => autoInjectByComplexity(null, 5)).not.toThrow();
+    expect(() => autoInjectByComplexity(undefined, 5)).not.toThrow();
+  });
+
+  // Edge case: invalid complexity
+  it('throws error for invalid complexity', () => {
+    expect(() => autoInjectByComplexity('task', 'invalid')).toThrow();
+    expect(() => autoInjectByComplexity('task', NaN)).toThrow();
+  });
+
+  // Edge case: extreme complexity values
+  it('handles extreme complexity values', () => {
+    const low = autoInjectByComplexity('task', -10);
+    expect(() => autoInjectByComplexity('task', -10)).not.toThrow();
+
+    const high = autoInjectByComplexity('task', 100);
+    expect(() => autoInjectByComplexity('task', 100)).not.toThrow();
+  });
+
+  // Edge case: very low complexity
+  it('does not inject for very low complexity', () => {
+    const result = autoInjectByComplexity('What is X?', 1);
+    expect(result.modified).toBe(false);
+    expect(result.injectedKeyword).toBeNull();
+  });
+});
+
+describe('batchAutoInject', () => {
+
+  it('processes multiple prompts', () => {
+    const prompts = [
+      'What is JavaScript?',
+      'Fix the authentication bug',
+      'Design a microservice architecture',
+      'Debug complex race condition',
+    ];
+    const result = batchAutoInject(prompts);
+
+    expect(result.results.length).toBe(4);
+    expect(result.stats.totalProcessed).toBe(4);
+  });
+
+  it('provides statistics on keyword usage', () => {
+    const prompts = ['task 1', 'task 2', 'task 3'];
+    const result = batchAutoInject(prompts);
+
+    expect(result.stats).toHaveProperty('totalProcessed');
+    expect(result.stats).toHaveProperty('totalModified');
+    expect(result.stats).toHaveProperty('keywordCounts');
+    expect(result.stats.keywordCounts).toHaveProperty('think');
+    expect(result.stats.keywordCounts).toHaveProperty('megathink');
+    expect(result.stats.keywordCounts).toHaveProperty('ultrathink');
+    expect(result.stats.keywordCounts).toHaveProperty('none');
+  });
+
+  it('accepts custom complexity scorer', () => {
+    const prompts = ['task1', 'task2'];
+    const customScorer = () => 8; // always return 8
+
+    const result = batchAutoInject(prompts, customScorer);
+
+    // All should get megathink (complexity 8)
+    const megathinkCount = result.results.filter(r => r.keyword === 'megathink').length;
+    expect(megathinkCount).toBeGreaterThan(0);
+  });
+
+  it('uses default scorer when none provided', () => {
+    const prompts = ['short', 'this is a much longer prompt with many words that should trigger a higher complexity score'];
+    const result = batchAutoInject(prompts);
+
+    expect(result.results[0].complexity).toBeLessThan(result.results[1].complexity);
+  });
+
+  // Edge case: empty array
+  it('handles empty array', () => {
+    const result = batchAutoInject([]);
+    expect(result.results).toEqual([]);
+    expect(result.stats.totalProcessed).toBe(0);
+  });
+
+  // Edge case: array with invalid items
+  it('handles array with invalid items gracefully', () => {
+    const prompts = ['valid', null, 123, {}, 'another valid'];
+    const result = batchAutoInject(prompts);
+
+    expect(result.results.length).toBe(5);
+    // Should have error field for invalid items
+    expect(result.results[1].error).toBeDefined();
+    expect(result.results[2].error).toBeDefined();
+    expect(result.results[3].error).toBeDefined();
+  });
+
+  // Edge case: invalid prompts parameter
+  it('throws error for non-array input', () => {
+    expect(() => batchAutoInject('not an array')).toThrow();
+    expect(() => batchAutoInject(null)).toThrow();
+  });
+
+  // Edge case: invalid scorer parameter
+  it('throws error for invalid scorer', () => {
+    expect(() => batchAutoInject(['task'], 'not a function')).toThrow();
+    expect(() => batchAutoInject(['task'], 123)).toThrow();
   });
 });

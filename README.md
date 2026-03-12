@@ -89,9 +89,9 @@ Add to your Claude Code settings (`~/.claude/settings.json`):
 
 ```javascript
 import { scoreComplexity } from './lib/complexity-scorer.mjs';
-import { allocate, getOptimalBudget } from './lib/budget-allocator.mjs';
+import { allocate, getOptimalBudget, getRecommendation } from './lib/budget-allocator.mjs';
 import { detectThinkingLevel, suggestLevel } from './lib/thinking-keywords.mjs';
-import { trackThinkingCost, getThinkingSavings } from './lib/cost-tracker.mjs';
+import { trackThinkingCost, getThinkingSavings, generateSavingsReport } from './lib/cost-tracker.mjs';
 
 // Score a prompt
 const score = scoreComplexity('Design a distributed cache system');
@@ -105,6 +105,10 @@ const budget = allocate(score);
 const optimal = getOptimalBudget('Fix the login bug', 0.05);
 // → { tokens: 2048, tier: 'light', estimatedCost: 0.024, ... }
 
+// Get formatted CLI recommendation
+const recommendation = getRecommendation('Implement OAuth2 authentication');
+console.log(recommendation);
+
 // Detect existing thinking keywords
 const level = detectThinkingLevel('ultrathink about this problem');
 // → { keyword: 'ultrathink', level: 'maximum', tokens: 32768 }
@@ -113,6 +117,10 @@ const level = detectThinkingLevel('ultrathink about this problem');
 trackThinkingCost(2048, 'claude-sonnet-4-6');
 const savings = getThinkingSavings();
 // → { totalSaved: 0.368, percentSaved: 93.75, ... }
+
+// Generate formatted savings report
+const report = generateSavingsReport();
+console.log(report);
 ```
 
 ### Python Hook (Standalone)
@@ -121,6 +129,186 @@ const savings = getThinkingSavings();
 echo '{"prompt": "Design a microservice architecture"}' | python3 hooks/praxis-allocator.py
 # → {"max_thinking_tokens": 16384, "complexity_score": 7, "decision": "auto_scored"}
 ```
+
+## Examples
+
+PRAXIS includes practical examples demonstrating real-world usage:
+
+### 1. Session Optimizer
+
+**File:** [`examples/optimize-session.mjs`](examples/optimize-session.mjs)
+
+Simulates a complete coding session with 8 diverse tasks, showing how Praxis optimizes thinking token allocation across simple and complex prompts. Demonstrates:
+
+- Complexity scoring for varied task types
+- Automatic tier selection and budget allocation
+- Session-wide token and cost savings tracking
+- Efficiency metrics across multiple API calls
+
+**Run it:**
+```bash
+node examples/optimize-session.mjs
+```
+
+**Sample output:**
+```
+=== Praxis Session Optimizer ===
+
+--- Analyzing Tasks ---
+
+Task                                                        Score  Tier        Tokens   Cost
+----------------------------------------------------------------------------------------------------
+  Fix the typo in the README file                            3/10  light           2048   think
+  Add input validation to the user registration form usi     5/10  medium          8192   think
+  Design a distributed caching architecture with Redis c     8/10  heavy          16384   megathink
+  What does the formatDate function do?                      1/10  none               0   none
+  Refactor the authentication module to support OAuth2 w     6/10  medium          8192   think
+  Run the test suite                                         1/10  none               0   none
+  Implement a real-time collaboration system using CRDTs     9/10  max            32768   ultrathink
+  Update the copyright year in the footer component          3/10  light           2048   think
+
+--- Session Savings Report ---
+
+  Total allocated:   69,632 tokens
+  Max possible:      262,144 tokens
+  Tokens saved:      192,512 tokens
+  Percent saved:     73.4%
+  Calls optimized:   8
+  Avg efficiency:    93.2%
+```
+
+### 2. Complexity Demo
+
+**File:** [`examples/complexity-demo.mjs`](examples/complexity-demo.mjs)
+
+Explores the complexity scoring engine in depth. Shows how Praxis analyzes different signal types (keywords, length, question type, structure) and assigns scores. Demonstrates:
+
+- Budget tier reference table
+- Thinking keyword mappings
+- Diverse prompt analysis (simple to complex)
+- Multi-signal scoring breakdown
+- Code-specific complexity analysis
+
+**Run it:**
+```bash
+node examples/complexity-demo.mjs
+```
+
+**Sample output:**
+```
+=== Praxis Complexity Scoring Demo ===
+
+--- Budget Tiers ---
+
+  none         0 tokens
+  light     2048 tokens
+  medium    8192 tokens
+  heavy    16384 tokens
+  max      32768 tokens
+
+--- Thinking Keywords ---
+
+  think        → 8192 tokens (standard)
+  megathink    → 16384 tokens (deep)
+  ultrathink   → 32768 tokens (maximum)
+
+--- Prompt Analysis ---
+
+  "What time is it?"
+    Type: question  |  Score: 1/10  |  Tier: none  |  Tokens: 0
+    Signals: keywords=1.0, length=1.0, question=1.0, structure=1.0
+
+  "Design a microservices architecture with event sourcing and CQRS"
+    Type: architecture  |  Score: 8/10  |  Tier: heavy  |  Tokens: 16384
+    Signals: keywords=7.0, length=5.0, question=8.0, structure=1.0
+```
+
+## CLI Recommendations
+
+Use `getRecommendation()` to generate formatted budget recommendations for CLI display:
+
+```javascript
+import { getRecommendation } from './lib/budget-allocator.mjs';
+
+const prompt = 'Implement OAuth2 authentication with PKCE flow';
+console.log(getRecommendation(prompt));
+```
+
+**Output:**
+```
+┌─────────────────────────────────────────┐
+│  Praxis Thinking Budget Recommendation  │
+├─────────────────────────────────────────┤
+│  Complexity:   6/10  ██████░░░░          │
+│  Task Type:   implementation            │
+│  Budget Tier: medium                    │
+│  Tokens:        8192                    │
+│  Model:       claude-sonnet-4-6         │
+│  Est. Cost:   $0.0983                   │
+└─────────────────────────────────────────┘
+```
+
+The visual complexity bar and structured layout make it easy to understand budget allocation at a glance.
+
+## Savings Report
+
+Use `generateSavingsReport()` to create formatted savings summaries for CLI display:
+
+```javascript
+import { generateSavingsReport, trackThinkingCost } from './lib/cost-tracker.mjs';
+
+// Track some costs first
+trackThinkingCost(2048, 'claude-sonnet-4-6');
+trackThinkingCost(8192, 'claude-sonnet-4-6');
+trackThinkingCost(0, 'claude-sonnet-4-6');
+trackThinkingCost(16384, 'claude-sonnet-4-6');
+
+console.log(generateSavingsReport());
+```
+
+**Output:**
+```
+╔══════════════════════════════════════════╗
+║        Praxis Savings Report             ║
+╠══════════════════════════════════════════╣
+║  Total API Calls:           4            ║
+║  Actual Cost:        $0.3174             ║
+║  Without Praxis:     $1.5728             ║
+║  Money Saved:        $1.2554             ║
+║  Savings Rate:         79.8%             ║
+╠══════════════════════════════════════════╣
+║  Tier Distribution:                      ║
+║    none       ████                  25%  ║
+║    light      ████                  25%  ║
+║    medium     ████                  25%  ║
+║    heavy      ████                  25%  ║
+╚══════════════════════════════════════════╝
+```
+
+The report includes:
+- Total cost vs. maximum-budget baseline
+- Percentage and dollar savings
+- Visual tier distribution showing allocation patterns
+
+## Budget Tiers Reference
+
+Praxis uses five budget tiers based on complexity scores:
+
+| Tier   | Complexity | Tokens | Cost (Sonnet) | Use Case                          | Keyword      |
+|--------|------------|--------|---------------|-----------------------------------|--------------|
+| None   | 1-2        | 0      | $0.00         | Trivial queries, simple lookups   | —            |
+| Light  | 3-4        | 2,048  | $0.02         | Basic edits, small fixes          | `think`      |
+| Medium | 5-6        | 8,192  | $0.10         | Standard implementation tasks     | `think`      |
+| Heavy  | 7-8        | 16,384 | $0.20         | Complex refactoring, architecture | `megathink`  |
+| Max    | 9-10       | 32,768 | $0.39         | Advanced debugging, system design | `ultrathink` |
+
+**Cost calculations** are based on Claude Sonnet 4.6 thinking token pricing ($0.012 per 1K tokens). Actual costs vary by model:
+
+- **Claude Opus 4.6:** $0.06 per 1K thinking tokens
+- **Claude Sonnet 4.6:** $0.012 per 1K thinking tokens (default)
+- **Claude Haiku 4.5:** $0.003 per 1K thinking tokens
+
+**Tier selection is automatic** based on multi-signal complexity analysis, but can be manually overridden using thinking keywords in prompts.
 
 ## Modules
 
