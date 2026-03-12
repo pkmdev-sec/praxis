@@ -76,11 +76,21 @@ THINKING_KEYWORDS = {
 
 
 def detect_thinking_keyword(prompt: str) -> int | None:
-    """Check if the prompt already contains a thinking keyword."""
+    """
+    Check if the prompt already contains a thinking keyword.
+
+    Uses more specific patterns for 'think' to avoid false positives with
+    natural language (e.g., "I need to think about this").
+    """
     lower = prompt.lower()
-    for keyword, tokens in THINKING_KEYWORDS.items():
-        if re.search(rf"\b{keyword}\b", lower):
-            return tokens
+    # Check ultrathink and megathink first (exact match is fine)
+    if re.search(r"\bultrathink\b", lower):
+        return THINKING_KEYWORDS["ultrathink"]
+    if re.search(r"\bmegathink\b", lower):
+        return THINKING_KEYWORDS["megathink"]
+    # For 'think', use more specific pattern to avoid false positives
+    if re.search(r"\bthink\s+(step\s+by\s+step|carefully|through|deeply|hard|harder|critically|systematically|logically)\b", lower):
+        return THINKING_KEYWORDS["think"]
     return None
 
 
@@ -137,7 +147,14 @@ def log_allocation(prompt_preview: str, complexity: int, tokens: int) -> None:
 
 
 def main():
-    """Main hook entry point."""
+    """
+    Main hook entry point.
+
+    Note: This hook outputs max_thinking_tokens for Claude Code's UserPromptSubmit hook.
+    If the environment doesn't support thinking tokens configuration or the feature is
+    not available, the output is gracefully ignored by Claude Code, and the default
+    behavior is used. No fallback is needed in the hook itself.
+    """
     try:
         raw = sys.stdin.read()
         if not raw.strip():
@@ -181,11 +198,11 @@ def main():
         # Output JSON result
         print(json.dumps(result))
 
-    except json.JSONDecodeError:
-        print(json.dumps({"error": "Invalid JSON input"}), file=sys.stderr)
+    except json.JSONDecodeError as e:
+        print(json.dumps({"error": f"Invalid JSON input: {str(e)}"}), file=sys.stderr)
         print(json.dumps({}))
     except Exception as e:
-        print(json.dumps({"error": str(e)}), file=sys.stderr)
+        print(json.dumps({"error": f"Unexpected error: {str(e)}"}), file=sys.stderr)
         print(json.dumps({}))
 
 
