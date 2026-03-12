@@ -1,0 +1,4 @@
+node_modules/
+assets/allocation-log.jsonl
+.DS_Store
+*.log

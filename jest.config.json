@@ -1,0 +1,4 @@
+{
+  "transform": {},
+  "testMatch": ["**/tests/**/*.test.mjs"]
+}

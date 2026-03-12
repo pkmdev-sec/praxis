@@ -1,0 +1,17 @@
+{
+  "name": "praxis",
+  "version": "1.0.0",
+  "description": "PRAXIS — Thinking Budget Optimizer for Claude Code",
+  "type": "module",
+  "main": "lib/budget-allocator.mjs",
+  "scripts": {
+    "test": "node --experimental-vm-modules node_modules/.bin/jest --config jest.config.json",
+    "test:hook": "echo '{\"prompt\": \"design a distributed system\"}' | python3 hooks/praxis-allocator.py"
+  },
+  "keywords": ["claude", "thinking", "budget", "optimizer", "praxis"],
+  "license": "MIT",
+  "devDependencies": {
+    "@jest/globals": "^29.7.0",
+    "jest": "^29.7.0"
+  }
+}
