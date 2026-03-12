@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="assets/banner.svg" alt="PRAXIS — Thinking Budget Optimizer" width="700"/>
-</p>
+![Praxis Banner](assets/banner.svg)
 
 <p align="center">
   <strong>Allocate thinking tokens intelligently. Save cost. Preserve quality.</strong>
@@ -14,6 +12,12 @@
 </p>
 
 ---
+
+## Why Praxis?
+
+From Ancient Greek *πρᾶξις* (praxis), meaning the **practical application of theory**. In Aristotelian philosophy, praxis represented the bridge between abstract knowledge (*theoria*) and productive craft (*poiesis*) — the act of turning understanding into purposeful action.
+
+PRAXIS embodies this philosophical tradition. Claude's extended thinking capability is powerful but expensive — raw *theoria* without discipline. Praxis transforms this into optimized action: analyzing each task's true complexity, allocating precisely the thinking budget needed, and eliminating wasteful over-computation. It is the bridge between unlimited thinking and practical efficiency.
 
 ## What is PRAXIS?
 
@@ -30,17 +34,9 @@ Complex debugging →  32,768 tokens →  $0.37
 
 ## How It Works
 
-```
-┌─────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│  User Prompt │────▶│ Complexity Scorer │────▶│ Budget Allocator│
-└─────────────┘     └──────────────────┘     └─────────────────┘
-                            │                         │
-                    Score: 1-10              Tokens: 0-32768
-                            │                         │
-                    ┌───────▼─────────┐      ┌───────▼────────┐
-                    │Thinking Keywords│      │  Cost Tracker   │
-                    └─────────────────┘      └────────────────┘
-```
+<p align="center">
+  <img src="docs/visuals/architecture-diagram.svg" alt="PRAXIS Architecture Diagram" width="900"/>
+</p>
 
 ### Complexity Scoring
 
@@ -168,7 +164,8 @@ praxis/
 │   │   ├── complexity-scoring.md
 │   │   └── budget-allocation.md
 │   └── visuals/
-│       └── architecture.md
+│       ├── architecture.md
+│       └── architecture-diagram.svg
 └── README.md
 ```
 

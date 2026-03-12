@@ -1,117 +1,65 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 280" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 500" width="1500" height="500">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="800" y2="280" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#0f0a1e"/>
-      <stop offset="50%" stop-color="#1a1040"/>
-      <stop offset="100%" stop-color="#0f0a1e"/>
-    </linearGradient>
-    <linearGradient id="brainGrad" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#f59e0b"/>
       <stop offset="100%" stop-color="#4338ca"/>
     </linearGradient>
-    <linearGradient id="circuitGrad" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.6"/>
-      <stop offset="100%" stop-color="#4338ca" stop-opacity="0.6"/>
-    </linearGradient>
-    <linearGradient id="textGrad" x1="0" y1="0" x2="1" y2="0">
+    <linearGradient id="brainGrad" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#f59e0b"/>
-      <stop offset="50%" stop-color="#e2a52e"/>
       <stop offset="100%" stop-color="#4338ca"/>
+    </linearGradient>
+    <linearGradient id="glowGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f59e0b" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#f59e0b" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#4338ca" stop-opacity="0"/>
     </linearGradient>
     <filter id="glow">
-      <feGaussianBlur stdDeviation="3" result="blur"/>
-      <feMerge>
-        <feMergeNode in="blur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
     <filter id="softGlow">
-      <feGaussianBlur stdDeviation="6" result="blur"/>
-      <feMerge>
-        <feMergeNode in="blur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
+    <pattern id="circuit" width="60" height="60" patternUnits="userSpaceOnUse">
+      <path d="M 0 30 L 20 30 M 30 0 L 30 20 M 40 30 L 60 30 M 30 40 L 30 60" fill="none" stroke="#4338ca" stroke-width="0.5" opacity="0.08"/>
+      <circle cx="30" cy="30" r="2" fill="none" stroke="#f59e0b" stroke-width="0.5" opacity="0.06"/>
+    </pattern>
   </defs>
-
-  <!-- Background -->
-  <rect width="800" height="280" rx="16" fill="url(#bg)"/>
-
-  <!-- Circuit grid pattern -->
-  <g stroke="url(#circuitGrad)" stroke-width="0.5" opacity="0.15">
-    <line x1="50" y1="40" x2="750" y2="40"/>
-    <line x1="50" y1="80" x2="750" y2="80"/>
-    <line x1="50" y1="200" x2="750" y2="200"/>
-    <line x1="50" y1="240" x2="750" y2="240"/>
-    <line x1="100" y1="20" x2="100" y2="260"/>
-    <line x1="200" y1="20" x2="200" y2="260"/>
-    <line x1="600" y1="20" x2="600" y2="260"/>
-    <line x1="700" y1="20" x2="700" y2="260"/>
+  <rect width="1500" height="500" fill="#000000"/>
+  <rect width="1500" height="500" fill="url(#circuit)"/>
+  <rect y="0" width="1500" height="2" fill="url(#accentGrad)" opacity="0.8"/>
+  <rect y="498" width="1500" height="2" fill="url(#accentGrad)" opacity="0.4"/>
+  <!-- Brain-circuit logo -->
+  <g transform="translate(750, 190)" filter="url(#glow)">
+    <!-- Brain outline left hemisphere -->
+    <path d="M-5,-35 C-25,-35 -35,-25 -35,-5 C-35,10 -28,25 -15,35 C-10,38 -5,40 0,40" fill="none" stroke="url(#brainGrad)" stroke-width="2" opacity="0.8"/>
+    <!-- Brain outline right hemisphere -->
+    <path d="M5,-35 C25,-35 35,-25 35,-5 C35,10 28,25 15,35 C10,38 5,40 0,40" fill="none" stroke="url(#brainGrad)" stroke-width="2" opacity="0.8"/>
+    <!-- Brain folds -->
+    <path d="M0,-35 L0,40" fill="none" stroke="url(#brainGrad)" stroke-width="1" opacity="0.4"/>
+    <path d="M-25,-15 C-15,-10 -5,-15 0,-10 C5,-15 15,-10 25,-15" fill="none" stroke="url(#brainGrad)" stroke-width="1" opacity="0.4"/>
+    <path d="M-20,10 C-10,15 -5,10 0,15 C5,10 10,15 20,10" fill="none" stroke="url(#brainGrad)" stroke-width="1" opacity="0.4"/>
+    <!-- Circuit traces extending from brain -->
+    <g opacity="0.5">
+      <line x1="-35" y1="-5" x2="-55" y2="-5" stroke="#f59e0b" stroke-width="1"/>
+      <line x1="-55" y1="-5" x2="-55" y2="-20" stroke="#f59e0b" stroke-width="1"/>
+      <circle cx="-55" cy="-20" r="2.5" fill="none" stroke="#f59e0b" stroke-width="1"/>
+      <line x1="35" y1="-5" x2="55" y2="-5" stroke="#4338ca" stroke-width="1"/>
+      <line x1="55" y1="-5" x2="55" y2="-20" stroke="#4338ca" stroke-width="1"/>
+      <circle cx="55" cy="-20" r="2.5" fill="none" stroke="#4338ca" stroke-width="1"/>
+      <line x1="-25" y1="-30" x2="-40" y2="-40" stroke="#f59e0b" stroke-width="1"/>
+      <circle cx="-40" cy="-40" r="2" fill="none" stroke="#f59e0b" stroke-width="1"/>
+      <line x1="25" y1="-30" x2="40" y2="-40" stroke="#4338ca" stroke-width="1"/>
+      <circle cx="40" cy="-40" r="2" fill="none" stroke="#4338ca" stroke-width="1"/>
+    </g>
   </g>
-
-  <!-- Circuit nodes -->
-  <g fill="#f59e0b" opacity="0.3">
-    <circle cx="100" cy="40" r="3"/>
-    <circle cx="200" cy="80" r="3"/>
-    <circle cx="700" cy="40" r="3"/>
-    <circle cx="600" cy="200" r="3"/>
-    <circle cx="100" cy="240" r="3"/>
-    <circle cx="700" cy="200" r="3"/>
-  </g>
-
-  <!-- Brain icon -->
-  <g transform="translate(120, 90)" filter="url(#glow)">
-    <!-- Brain outline -->
-    <path d="M50 10 C30 10, 10 30, 10 50 C10 65, 15 75, 25 82 C20 88, 18 95, 22 100 C26 105, 35 105, 40 100 C42 108, 50 112, 55 108 C60 112, 68 108, 70 100 C75 105, 84 105, 88 100 C92 95, 90 88, 85 82 C95 75, 100 65, 100 50 C100 30, 80 10, 60 10 C57 5, 53 5, 50 10Z"
-          fill="none" stroke="url(#brainGrad)" stroke-width="2.5"/>
-    <!-- Brain fold lines -->
-    <path d="M55 15 C55 35, 35 45, 55 65" fill="none" stroke="#f59e0b" stroke-width="1.5" opacity="0.7"/>
-    <path d="M55 65 C75 50, 55 40, 55 15" fill="none" stroke="#4338ca" stroke-width="1.5" opacity="0.7"/>
-    <path d="M30 40 C45 45, 45 55, 30 65" fill="none" stroke="#f59e0b" stroke-width="1" opacity="0.5"/>
-    <path d="M80 40 C65 45, 65 55, 80 65" fill="none" stroke="#4338ca" stroke-width="1" opacity="0.5"/>
-
-    <!-- Optimization circuit nodes on brain -->
-    <circle cx="40" cy="35" r="3" fill="#f59e0b" opacity="0.9"/>
-    <circle cx="70" cy="35" r="3" fill="#4338ca" opacity="0.9"/>
-    <circle cx="35" cy="60" r="3" fill="#f59e0b" opacity="0.9"/>
-    <circle cx="75" cy="60" r="3" fill="#4338ca" opacity="0.9"/>
-    <circle cx="55" cy="50" r="4" fill="#f59e0b" opacity="0.9"/>
-
-    <!-- Circuit connections -->
-    <line x1="40" y1="35" x2="55" y2="50" stroke="#f59e0b" stroke-width="1" opacity="0.6"/>
-    <line x1="70" y1="35" x2="55" y2="50" stroke="#4338ca" stroke-width="1" opacity="0.6"/>
-    <line x1="35" y1="60" x2="55" y2="50" stroke="#f59e0b" stroke-width="1" opacity="0.6"/>
-    <line x1="75" y1="60" x2="55" y2="50" stroke="#4338ca" stroke-width="1" opacity="0.6"/>
-
-    <!-- External circuit traces -->
-    <line x1="10" y1="50" x2="-15" y2="50" stroke="#f59e0b" stroke-width="1" opacity="0.4"/>
-    <line x1="100" y1="50" x2="125" y2="50" stroke="#4338ca" stroke-width="1" opacity="0.4"/>
-    <circle cx="-15" cy="50" r="2" fill="#f59e0b" opacity="0.5"/>
-    <circle cx="125" cy="50" r="2" fill="#4338ca" opacity="0.5"/>
-  </g>
-
-  <!-- Title: PRAXIS -->
-  <text x="400" y="115" text-anchor="middle" font-family="'SF Mono', 'Fira Code', 'JetBrains Mono', monospace" font-size="64" font-weight="800" fill="url(#textGrad)" filter="url(#softGlow)" letter-spacing="12">PRAXIS</text>
-
+  <!-- Title -->
+  <text x="750" y="290" text-anchor="middle" font-family="'SF Pro Display', 'Helvetica Neue', Arial, sans-serif" font-size="72" font-weight="700" letter-spacing="18" fill="url(#accentGrad)" filter="url(#glow)">PRAXIS</text>
   <!-- Subtitle -->
-  <text x="400" y="155" text-anchor="middle" font-family="'SF Mono', 'Fira Code', 'JetBrains Mono', monospace" font-size="16" fill="#a5b4fc" letter-spacing="6" opacity="0.9">THINKING BUDGET OPTIMIZER</text>
-
+  <text x="750" y="330" text-anchor="middle" font-family="'SF Pro Display', 'Helvetica Neue', Arial, sans-serif" font-size="16" font-weight="300" letter-spacing="6" fill="#f59e0b" opacity="0.7">THINKING TOKEN BUDGET OPTIMIZER</text>
   <!-- Decorative line -->
-  <line x1="260" y1="175" x2="540" y2="175" stroke="url(#brainGrad)" stroke-width="1" opacity="0.4"/>
-
-  <!-- Tag line -->
-  <text x="400" y="200" text-anchor="middle" font-family="'Inter', 'SF Pro', sans-serif" font-size="13" fill="#94a3b8" opacity="0.7">Allocate thinking tokens intelligently. Save cost. Preserve quality.</text>
-
-  <!-- Version badge -->
-  <g transform="translate(338, 215)">
-    <rect width="50" height="20" rx="10" fill="#f59e0b" opacity="0.15"/>
-    <text x="25" y="14" text-anchor="middle" font-family="monospace" font-size="10" fill="#f59e0b">v1.0.0</text>
-  </g>
-  <g transform="translate(398, 215)">
-    <rect width="70" height="20" rx="10" fill="#4338ca" opacity="0.15"/>
-    <text x="35" y="14" text-anchor="middle" font-family="monospace" font-size="10" fill="#818cf8">Node.js</text>
-  </g>
-
-  <!-- Border glow -->
-  <rect x="1" y="1" width="798" height="278" rx="16" fill="none" stroke="url(#brainGrad)" stroke-width="1" opacity="0.3"/>
+  <rect x="600" y="345" width="300" height="1" fill="url(#glowGrad)"/>
+  <!-- Bottom tagline -->
+  <text x="750" y="420" text-anchor="middle" font-family="'SF Pro Display', 'Helvetica Neue', Arial, sans-serif" font-size="12" letter-spacing="3" fill="#555555">OPTIMIZING THOUGHT INTO ACTION</text>
 </svg>

@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700" width="1200" height="700">
+  <defs>
+    <linearGradient id="boxGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#4338ca" stop-opacity="0.15"/>
+    </linearGradient>
+    <linearGradient id="lineGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#4338ca"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="1200" height="700" fill="#000000"/>
+  <!-- Title -->
+  <text x="600" y="40" text-anchor="middle" font-family="'SF Pro Display', Arial, sans-serif" font-size="20" font-weight="600" fill="#f59e0b" letter-spacing="4">PRAXIS ARCHITECTURE</text>
+  <!-- User Prompt input -->
+  <rect x="475" y="70" width="250" height="50" rx="6" fill="url(#boxGrad)" stroke="#f59e0b" stroke-width="1.5" opacity="0.9"/>
+  <text x="600" y="100" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#f59e0b">User Prompt</text>
+  <!-- Arrow down -->
+  <line x1="600" y1="120" x2="600" y2="160" stroke="url(#lineGrad)" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+  <polygon points="595,155 605,155 600,165" fill="#f59e0b" opacity="0.8"/>
+  <!-- Hook Layer -->
+  <rect x="400" y="170" width="400" height="50" rx="6" fill="url(#boxGrad)" stroke="#4338ca" stroke-width="1.5" opacity="0.9"/>
+  <text x="600" y="200" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#4338ca">praxis-allocator.py (Claude Hook)</text>
+  <!-- Arrow down -->
+  <polygon points="595,225 605,225 600,235" fill="#f59e0b" opacity="0.8"/>
+  <!-- Processing modules row -->
+  <rect x="100" y="260" width="200" height="60" rx="6" fill="url(#boxGrad)" stroke="#f59e0b" stroke-width="1" opacity="0.9"/>
+  <text x="200" y="285" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#f59e0b">thinking-keywords</text>
+  <text x="200" y="305" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#666">Keyword Detection</text>
+  <rect x="400" y="260" width="200" height="60" rx="6" fill="url(#boxGrad)" stroke="#f59e0b" stroke-width="1" opacity="0.9"/>
+  <text x="500" y="285" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#f59e0b">complexity-scorer</text>
+  <text x="500" y="305" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#666">Score 1-10</text>
+  <rect x="700" y="260" width="200" height="60" rx="6" fill="url(#boxGrad)" stroke="#4338ca" stroke-width="1" opacity="0.9"/>
+  <text x="800" y="285" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#4338ca">budget-allocator</text>
+  <text x="800" y="305" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#666">Token Budget</text>
+  <rect x="1000" y="260" width="150" height="60" rx="6" fill="url(#boxGrad)" stroke="#4338ca" stroke-width="1" opacity="0.9"/>
+  <text x="1075" y="285" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#4338ca">cost-tracker</text>
+  <text x="1075" y="305" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#666">Savings Log</text>
+  <!-- Flow arrows between modules -->
+  <line x1="300" y1="290" x2="400" y2="290" stroke="#f59e0b" stroke-width="1" opacity="0.6"/>
+  <line x1="600" y1="290" x2="700" y2="290" stroke="url(#lineGrad)" stroke-width="1" opacity="0.6"/>
+  <line x1="900" y1="290" x2="1000" y2="290" stroke="#4338ca" stroke-width="1" opacity="0.6"/>
+  <!-- Budget tiers -->
+  <rect x="250" y="400" width="700" height="180" rx="8" fill="none" stroke="#333" stroke-width="1" stroke-dasharray="4"/>
+  <text x="600" y="425" text-anchor="middle" font-family="Arial, sans-serif" font-size="13" fill="#666" letter-spacing="2">BUDGET TIERS</text>
+  <g font-family="Arial, sans-serif" font-size="12">
+    <rect x="280" y="440" width="120" height="35" rx="4" fill="#111" stroke="#444" stroke-width="1"/>
+    <text x="340" y="462" text-anchor="middle" fill="#888">None (0)</text>
+    <rect x="420" y="440" width="120" height="35" rx="4" fill="#111" stroke="#f59e0b" stroke-width="1" opacity="0.4"/>
+    <text x="480" y="462" text-anchor="middle" fill="#f59e0b" opacity="0.6">Light (2K)</text>
+    <rect x="560" y="440" width="120" height="35" rx="4" fill="#111" stroke="#f59e0b" stroke-width="1" opacity="0.6"/>
+    <text x="620" y="462" text-anchor="middle" fill="#f59e0b" opacity="0.8">Medium (8K)</text>
+    <rect x="700" y="440" width="120" height="35" rx="4" fill="#111" stroke="#4338ca" stroke-width="1" opacity="0.6"/>
+    <text x="760" y="462" text-anchor="middle" fill="#4338ca" opacity="0.8">Heavy (16K)</text>
+    <rect x="840" y="440" width="120" height="35" rx="4" fill="#111" stroke="#4338ca" stroke-width="1"/>
+    <text x="900" y="462" text-anchor="middle" fill="#4338ca">Max (32K)</text>
+  </g>
+  <!-- Output -->
+  <rect x="400" y="620" width="400" height="50" rx="6" fill="url(#boxGrad)" stroke="url(#lineGrad)" stroke-width="1.5"/>
+  <text x="600" y="650" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#f59e0b">Optimized API Call with Budget</text>
+  <polygon points="595,590 605,590 600,615" fill="#4338ca" opacity="0.6"/>
+</svg>
