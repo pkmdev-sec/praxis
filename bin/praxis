@@ -1,0 +1,432 @@
+#!/usr/bin/env node
+/**
+ * PRAXIS — command-line interface.
+ *
+ * Subcommands:
+ *   praxis init          — scaffold ~/.claude/settings.json with both hooks.
+ *   praxis verify [file] — verify every signed record in a ledger (exit non-zero
+ *                          if any row is tampered or missing a signature).
+ *   praxis report        — per-tier regret ledger + overall totals.
+ *   praxis calibrate     — score-level calibration curve.
+ *   praxis tail [N]      — last N joined rows (default 10).
+ *   praxis key            — print the HMAC signing key path and fingerprint.
+ *
+ * All subcommands are read-only except ``init`` (which never overwrites an
+ * existing settings.json). The goal is an "audit by anyone, locally" workflow:
+ * the user — or Anthropic support if they ever care — can replay every Praxis
+ * decision without trusting the process that produced the ledger.
+ */
+
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import crypto from 'node:crypto';
+
+import {
+  loadLedger,
+  regretLedger,
+  calibrationCurve,
+  buildTree,
+  renderTree,
+} from '../lib/ledger.mjs';
+import { praxisHome, ledgerPath, verifyRecord } from '../lib/receipt.mjs';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const REPO = path.dirname(HERE);
+
+const USAGE = `praxis — reasoning-budget verification layer
+
+Usage:
+  praxis init                  Scaffold ~/.claude/settings.json with Praxis hooks
+  praxis verify [file]         Verify signed records in a ledger (default: both ledgers)
+  praxis report                Per-tier regret ledger (honest over/under allocation)
+  praxis calibrate             Calibration curve: complexity score vs utilisation
+  praxis tail [N]              Last N joined alloc↔outcome rows (default: 10)
+  praxis tree                  Render the CXR recursion tree from signed receipts
+  praxis doctor                Detect anomalies: overthinking, undershoots, verdict drift
+  praxis key                   Print keyfile path and fingerprint (first 8 chars)
+  praxis help                  This screen
+
+Environment:
+  PRAXIS_HOME                  Ledger directory (default: <repo>/assets)
+  PRAXIS_RECEIPT_KEY           Override signing key (hex); falls back to keyfile
+`;
+
+function main(argv) {
+  const [cmd = 'help', ...rest] = argv;
+  try {
+    switch (cmd) {
+      case 'help':
+      case '--help':
+      case '-h':
+        process.stdout.write(USAGE);
+        return 0;
+      case 'init':
+        return cmdInit();
+      case 'verify':
+        return cmdVerify(rest[0]);
+      case 'report':
+        return cmdReport();
+      case 'calibrate':
+        return cmdCalibrate();
+      case 'tail':
+        return cmdTail(Number.parseInt(rest[0] ?? '10', 10));
+      case 'key':
+        return cmdKey();
+      case 'tree':
+        return cmdTree();
+      case 'doctor':
+        return cmdDoctor();
+      default:
+        process.stderr.write(`praxis: unknown command '${cmd}'\n\n${USAGE}`);
+        return 2;
+    }
+  } catch (err) {
+    process.stderr.write(`praxis: ${err.message}\n`);
+    return 1;
+  }
+}
+
+// ── init ────────────────────────────────────────────────────────────────────
+
+function cmdInit() {
+  const settingsDir = path.join(os.homedir(), '.claude');
+  const settingsPath = path.join(settingsDir, 'settings.json');
+  fs.mkdirSync(settingsDir, { recursive: true });
+
+  const allocator = path.join(REPO, 'hooks', 'praxis-allocator.py');
+  const outcome = path.join(REPO, 'hooks', 'praxis-outcome.py');
+
+  let existing = {};
+  if (fs.existsSync(settingsPath)) {
+    try {
+      existing = JSON.parse(fs.readFileSync(settingsPath, 'utf8')) ?? {};
+    } catch {
+      process.stderr.write(`praxis init: ${settingsPath} is not valid JSON; refusing to overwrite.\n`);
+      return 1;
+    }
+  }
+
+  existing.hooks = existing.hooks ?? {};
+  existing.hooks.UserPromptSubmit = mergeHook(existing.hooks.UserPromptSubmit, {
+    command: `python3 ${allocator}`,
+  });
+  existing.hooks.Stop = mergeHook(existing.hooks.Stop, {
+    command: `python3 ${outcome}`,
+  });
+
+  fs.writeFileSync(settingsPath, JSON.stringify(existing, null, 2) + '\n');
+  process.stdout.write(`praxis: wrote ${settingsPath}\n`);
+  process.stdout.write(`praxis: ledger dir = ${praxisHome()}\n`);
+  return 0;
+}
+
+function mergeHook(existing, entry) {
+  const arr = Array.isArray(existing) ? existing : [];
+  if (arr.some((h) => h && h.command === entry.command)) return arr;
+  return [...arr, entry];
+}
+
+// ── verify ──────────────────────────────────────────────────────────────────
+
+function cmdVerify(explicit) {
+  const files = explicit
+    ? [explicit]
+    : [ledgerPath('allocation-log.jsonl'), ledgerPath('outcome-log.jsonl')];
+
+  let total = 0;
+  let bad = 0;
+  let tampered = 0;
+  for (const file of files) {
+    if (!fs.existsSync(file)) {
+      process.stdout.write(`  ∅  ${file} (not found)\n`);
+      continue;
+    }
+    const res = verifyFile(file);
+    total += res.total;
+    bad += res.bad;
+    tampered += res.tampered;
+    process.stdout.write(
+      `  ${res.tampered === 0 && res.bad === 0 ? '✓' : '✗'}  ${file}` +
+      `  total=${res.total} ok=${res.ok} tampered=${res.tampered} malformed=${res.bad}\n`,
+    );
+  }
+  process.stdout.write(
+    `\nsummary: ${total - tampered - bad}/${total} verified, ${tampered} tampered, ${bad} malformed\n`,
+  );
+  return tampered === 0 && bad === 0 ? 0 : 1;
+}
+
+function verifyFile(file) {
+  const text = fs.readFileSync(file, 'utf8');
+  let total = 0;
+  let ok = 0;
+  let tampered = 0;
+  let bad = 0;
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    if (!line) continue;
+    total += 1;
+    let rec;
+    try {
+      rec = JSON.parse(line);
+    } catch {
+      bad += 1;
+      continue;
+    }
+    if (verifyRecord(rec)) ok += 1;
+    else tampered += 1;
+  }
+  return { total, ok, tampered, bad };
+}
+
+// ── report ──────────────────────────────────────────────────────────────────
+
+function cmdReport() {
+  const { rows, tampered, bad, allocs, outcomes } = loadLedger();
+  const r = regretLedger(rows);
+
+  const out = [];
+  out.push('');
+  out.push('  PRAXIS regret ledger');
+  out.push('  ' + '─'.repeat(72));
+  out.push(`    allocs=${allocs.length}  outcomes=${outcomes.length}  tampered=${tampered}  malformed=${bad}`);
+  out.push('');
+  out.push('    tier     n    w/outcome   budget       used        util    over%   under%');
+  out.push('    ' + '─'.repeat(70));
+  for (const b of r.byTier) {
+    out.push(
+      '    ' +
+        b.tier.padEnd(8) +
+        String(b.n).padStart(4) +
+        String(b.with_outcome).padStart(12) +
+        fmtNum(b.total_budget).padStart(12) +
+        fmtNum(b.total_used).padStart(12) +
+        fmtPct(b.utilization).padStart(10) +
+        fmtPct(b.overshoot_rate).padStart(9) +
+        fmtPct(b.undershoot_rate).padStart(9),
+    );
+  }
+  out.push('    ' + '─'.repeat(70));
+  const t = r.totals;
+  out.push(
+    '    ' +
+      'TOTAL'.padEnd(8) +
+      String(t.n).padStart(4) +
+      String(t.with_outcome).padStart(12) +
+      fmtNum(t.total_budget).padStart(12) +
+      fmtNum(t.total_used).padStart(12) +
+      fmtPct(t.utilization).padStart(10) +
+      fmtPct(t.overshoot_rate).padStart(9) +
+      fmtPct(t.undershoot_rate).padStart(9),
+  );
+  out.push('');
+  out.push('  Definitions:');
+  out.push('    over%  = fraction of turns where thinking_used < 25% of budget');
+  out.push('    under% = fraction of turns whose stop_reason was max_tokens');
+  out.push('');
+  process.stdout.write(out.join('\n'));
+  return 0;
+}
+
+function fmtNum(n) {
+  if (n == null) return '—';
+  if (n === 0) return '0';
+  return n.toLocaleString('en-US');
+}
+function fmtPct(n) {
+  if (n == null) return '—';
+  return (n * 100).toFixed(1) + '%';
+}
+
+// ── calibrate ───────────────────────────────────────────────────────────────
+
+function cmdCalibrate() {
+  const { rows } = loadLedger();
+  const curve = calibrationCurve(rows);
+  process.stdout.write('\n  score   n   util    under%\n');
+  process.stdout.write('  ' + '─'.repeat(32) + '\n');
+  for (const p of curve) {
+    process.stdout.write(
+      '  ' +
+        String(p.score).padStart(5) +
+        String(p.n).padStart(4) +
+        fmtPct(p.utilization).padStart(8) +
+        fmtPct(p.undershoot_rate).padStart(10) +
+        '\n',
+    );
+  }
+  process.stdout.write('\n');
+  return 0;
+}
+
+// ── tail ────────────────────────────────────────────────────────────────────
+
+function cmdTail(n) {
+  const { rows } = loadLedger();
+  const recent = rows.slice(-Math.max(1, n));
+  for (const r of recent) {
+    const a = r.alloc.payload;
+    const o = r.outcome?.payload;
+    process.stdout.write(
+      `  ${r.sid.slice(0, 8)}/${r.tid}  tier=${a.tier ?? '?'}  ` +
+        `budget=${a.budget_requested ?? '?'}  ` +
+        `used=${o?.thinking_used ?? '—'}  ` +
+        `stop=${o?.stop_reason ?? '—'}  ` +
+        `"${a.prompt_preview?.slice(0, 50) ?? ''}"\n`,
+    );
+  }
+  return 0;
+}
+
+// ── key ─────────────────────────────────────────────────────────────────────
+
+function cmdKey() {
+  const keyfile = ledgerPath('receipt.key');
+  const envKey = process.env.PRAXIS_RECEIPT_KEY;
+  process.stdout.write(`  keyfile: ${keyfile}\n`);
+  if (envKey && envKey.trim()) {
+    const fp = crypto.createHash('sha256').update(envKey.trim()).digest('hex').slice(0, 12);
+    process.stdout.write(`  source: env $PRAXIS_RECEIPT_KEY\n`);
+    process.stdout.write(`  fingerprint: ${fp}…\n`);
+  } else if (fs.existsSync(keyfile)) {
+    const hex = fs.readFileSync(keyfile, 'utf8').trim();
+    const fp = crypto.createHash('sha256').update(hex).digest('hex').slice(0, 12);
+    process.stdout.write(`  source: file\n`);
+    process.stdout.write(`  fingerprint: ${fp}…\n`);
+  } else {
+    process.stdout.write('  (not yet created — run any hook to bootstrap)\n');
+  }
+  return 0;
+}
+
+
+
+// ── tree ────────────────────────────────────────────────────────────────────
+
+function cmdTree() {
+  const { rows } = loadLedger();
+  const bySession = buildTree(rows);
+  process.stdout.write('\n');
+  process.stdout.write(renderTree(bySession));
+  process.stdout.write('\n');
+  process.stdout.write('  Legend: util = thinking_used / budget_requested\n');
+  process.stdout.write('          ⚠ truncated = stop_reason was max_tokens\n');
+  process.stdout.write('          ⚠ orphan    = parent_tid missing from ledger\n\n');
+  return 0;
+}
+
+// ── doctor ──────────────────────────────────────────────────────────────────
+
+/**
+ * Aggregate signal detector. Surfaces three classes of anomaly that would
+ * otherwise require the user to stare at the regret ledger until patterns
+ * emerged:
+ *
+ *   1. Undershoots: turns that hit stop_reason=max_tokens. If this is > 10%
+ *      on any tier the scorer is under-allocating (or the model is weaker
+ *      than we thought).
+ *   2. Overthinking: tiers whose median utilisation is < 25% across ≥ 10
+ *      samples. Reuses the same MIN_SAMPLES/UNDERUSE_THRESHOLD the Python
+ *      overthinking detector uses — pinning the JS and Python views to the
+ *      same thresholds.
+ *   3. Provider drift: for each tier, compare mean utilisation in the
+ *      oldest half of the ledger vs the newest half. If the recent window
+ *      is materially lower, the provider quietly reduced effort — the
+ *      exact March-2026 Anthropic silent-degradation story, now detectable
+ *      from the client side.
+ */
+function cmdDoctor() {
+  const { rows, tampered, bad } = loadLedger();
+
+  const findings = [];
+
+  // --- 1. Tampered / malformed rows -------------------------------------
+  if (tampered > 0) {
+    findings.push({
+      severity: 'error',
+      code: 'tampered',
+      msg: `${tampered} row(s) failed HMAC verification. Run "praxis verify" for details.`,
+    });
+  }
+  if (bad > 0) {
+    findings.push({
+      severity: 'warn',
+      code: 'malformed',
+      msg: `${bad} row(s) are not valid JSON. Ledger is partially readable.`,
+    });
+  }
+
+  // --- 2. Undershoots per tier -----------------------------------------
+  const regret = regretLedger(rows);
+  for (const b of regret.byTier) {
+    if (b.undershoot_rate != null && b.undershoot_rate > 0.1 && b.with_outcome >= 10) {
+      findings.push({
+        severity: 'warn',
+        code: 'undershoot',
+        msg: `tier=${b.tier}: ${(b.undershoot_rate * 100).toFixed(1)}% of turns hit max_tokens (n=${b.with_outcome}). Consider escalation or a higher default for this tier.`,
+      });
+    }
+  }
+
+  // --- 3. Overthinking per tier ----------------------------------------
+  for (const b of regret.byTier) {
+    if (b.utilization != null && b.utilization < 0.25 && b.with_outcome >= 10) {
+      findings.push({
+        severity: 'info',
+        code: 'overthinking',
+        msg: `tier=${b.tier}: mean utilisation ${(b.utilization * 100).toFixed(1)}% across n=${b.with_outcome}. Budget is over-allocated for this workload.`,
+      });
+    }
+  }
+
+  // --- 4. Provider-drift detector --------------------------------------
+  const byTier = new Map();
+  for (const r of rows) {
+    const p = r.alloc?.payload ?? {};
+    const tier = p.tier;
+    const budget = p.budget_requested;
+    const used = r.outcome?.payload?.thinking_used;
+    if (!tier || !budget || used == null) continue;
+    if (!byTier.has(tier)) byTier.set(tier, []);
+    byTier.get(tier).push({ ts: r.alloc.ts, ratio: used / budget });
+  }
+  for (const [tier, points] of byTier) {
+    if (points.length < 40) continue; // need enough data to split in half
+    points.sort((a, b) => a.ts - b.ts);
+    const mid = Math.floor(points.length / 2);
+    const older = points.slice(0, mid);
+    const newer = points.slice(mid);
+    const meanOlder = older.reduce((s, x) => s + x.ratio, 0) / older.length;
+    const meanNewer = newer.reduce((s, x) => s + x.ratio, 0) / newer.length;
+    const drop = meanOlder - meanNewer;
+    // Flag a sustained drop of >= 20 percentage points in utilisation — that
+    // matches the magnitude of the March-2026 Anthropic default flip
+    // (stellaraccident's 3.3x→1.2x Read:Edit ratio).
+    if (drop >= 0.20) {
+      findings.push({
+        severity: 'warn',
+        code: 'provider_drift',
+        msg: `tier=${tier}: utilisation dropped from ${(meanOlder * 100).toFixed(1)}% to ${(meanNewer * 100).toFixed(1)}% between the older and newer halves of your ledger. Possible silent provider degradation.`,
+      });
+    }
+  }
+
+  // --- render -----------------------------------------------------------
+  if (findings.length === 0) {
+    process.stdout.write('\n  ✓ No anomalies detected. Ledger is healthy.\n\n');
+    return 0;
+  }
+
+  process.stdout.write('\n  praxis doctor — ledger health report\n');
+  process.stdout.write('  ' + '─'.repeat(64) + '\n');
+  const icon = { error: '✗', warn: '⚠', info: 'ℹ' };
+  for (const f of findings) {
+    process.stdout.write(`    ${icon[f.severity] || ' '}  [${f.code}] ${f.msg}\n`);
+  }
+  process.stdout.write('\n');
+  return findings.some((f) => f.severity === 'error') ? 1 : 0;
+}
+
+process.exit(main(process.argv.slice(2)));
