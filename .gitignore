@@ -5,3 +5,22 @@ assets/allocation-log.jsonl
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# Praxis runtime state (per-user, never committed)
+assets/receipt.key
+assets/turn-state.json
+assets/outcome-log.jsonl
+assets/bench-log.jsonl
+assets/escalation-log.jsonl
+assets/reflection-log.jsonl
+
+# Python venvs + build artefacts
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Editor artefacts
+.vscode/
+.idea/
