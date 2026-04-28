@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "praxis"
+version = "1.2.0"
+description = "Reasoning-budget policy framework with signed receipts. Cross-provider verification layer for LLM thinking tokens."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "pkmdev-sec" }]
+keywords = ["llm", "anthropic", "openai", "reasoning", "thinking-tokens", "routing", "verification", "agents"]
+
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+# Core has no dependencies — adapters pull their SDKs only when used.
+dependencies = []
+
+[project.optional-dependencies]
+langchain = ["langchain-core>=0.3", "langchain-anthropic>=0.3"]
+openai-agents = ["openai-agents>=0.14"]
+dev = [
+  "pytest>=8.0",
+  "pytest-asyncio>=0.24",
+]
+
+[project.urls]
+Homepage = "https://github.com/pkmdev-sec/praxis"
+Documentation = "https://github.com/pkmdev-sec/praxis/blob/main/docs/receipts.md"
+Repository = "https://github.com/pkmdev-sec/praxis.git"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["praxis*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
