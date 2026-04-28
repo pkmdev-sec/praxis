@@ -69,19 +69,33 @@ npm install
 
 ### As a Claude Code Hook
 
-Add to your Claude Code settings (`~/.claude/settings.json`):
+Add to your Claude Code settings (`~/.claude/settings.json`). The hook must use the documented `command` / `type` shape so Claude Code reads the `hookSpecificOutput.additionalContext` field Praxis emits — this is the one field [`UserPromptSubmit` hooks can use to inject context](https://docs.claude.com/en/docs/claude-code/hooks):
 
 ```json
 {
   "hooks": {
     "UserPromptSubmit": [
       {
-        "command": "python3 ~/praxis/hooks/praxis-allocator.py"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/praxis/hooks/praxis-allocator.py",
+            "timeout": 5
+          }
+        ]
       }
     ]
   }
 }
 ```
+
+On each submitted prompt Praxis will:
+
+1. Score the prompt 1–10 (see [complexity scoring](docs/core-concepts/complexity-scoring.md))
+2. Resolve the active model (Opus 4.7 / Sonnet 4.6 / legacy) and pick the correct thinking-API shape — `adaptive` + `effort` for 4.7+, `adaptive` (or deprecated `budget_tokens`) for 4.6, manual `budget_tokens` for 4.5 and earlier
+3. Return a factual **complexity assessment** as `additionalContext` — phrased as a description, not an imperative, so Claude's prompt-injection defenses do not strip it (see [adaptive-thinking "Tuning thinking behavior"](https://docs.anthropic.com/en/docs/build-with-claude/adaptive-thinking))
+
+> **Note on session resume.** `additionalContext` is persisted to the session transcript. When you `--resume` or `--continue` a session, Claude Code replays the saved guidance rather than re-invoking the hook, so cached turns will show the assessment that was made at the time. New turns continue to be scored live.
 
 ## Usage
 
@@ -348,6 +362,7 @@ praxis/
 ├── assets/
 │   └── banner.svg
 ├── docs/
+│   ├── competitive-landscape.md
 │   ├── core-concepts/
 │   │   ├── complexity-scoring.md
 │   │   └── budget-allocation.md
@@ -356,6 +371,16 @@ praxis/
 │       └── architecture-diagram.svg
 └── README.md
 ```
+
+## Positioning
+
+Every mainstream agent framework exposes reasoning-budget as a static *mechanism* (a `thinking=` or `reasoning_effort=` kwarg). **None** ships the *policy* — a classifier that picks the budget per prompt. Praxis occupies that empty quadrant.
+
+Fourteen projects surveyed (LangChain, LangGraph, AutoGen, CrewAI, Agno, Haystack, LlamaIndex, Pydantic AI, OpenAI Agents SDK, Mastra, Microsoft Agent Framework, DSPy, Smolagents, Swarm); thirteen are `adjacent`, one is `no`. GitHub-wide searches for `"thinking budget" agent`, `"extended_thinking" complexity`, and `"thinking budget" claude code hook` all return **0 repositories** (2026-04-28). The closest architectural match — `Yarin-Shitrit/ccpilot`, a `UserPromptSubmit` hook that classifies prompts and routes to skills/subagents — confirms the pattern but targets a different surface.
+
+Praxis already tracks Anthropic's post-`budget_tokens` surface: the effort mapper picks `{type:"adaptive", effort}` for Opus 4.7 / Mythos, keeps `budget_tokens` for Opus ≤4.5 / Haiku / Sonnet 3.7, and emits both on Opus 4.6 / Sonnet 4.6 where `budget_tokens` is deprecated but still accepted (see `lib/effort-mapper.mjs`). Frameworks that only plumb `budget_tokens` will hit 400 errors on Opus 4.7; Praxis doesn't. The same 5-tier vocabulary maps cleanly onto OpenAI `reasoning_effort` (`low/medium/high`) and Gemini 3 `thinkingLevel` (`minimal/low/medium/high`) — Praxis doubles as a cross-provider normalization layer.
+
+See [`docs/competitive-landscape.md`](docs/competitive-landscape.md) for the per-framework rubric, Claude Code hook ecosystem analysis, prior-art notes (NemoCurator, RouteLLM, ccpilot), and the thesis-risk assessment vs Anthropic's server-side adaptive thinking / effort / task-budgets.
 
 ## License
 

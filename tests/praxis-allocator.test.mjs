@@ -56,4 +56,37 @@ describe('praxis-allocator hook', () => {
     });
     expect(JSON.parse(result.trim())).toEqual({});
   });
+
+  describe('hookSpecificOutput (Claude Code integration)', () => {
+    it('emits hookSpecificOutput.additionalContext on every non-empty prompt', () => {
+      const result = runHook({ prompt: 'What is a closure in JavaScript?' });
+      expect(result.hookSpecificOutput).toBeDefined();
+      expect(result.hookSpecificOutput.hookEventName).toBe('UserPromptSubmit');
+      expect(typeof result.hookSpecificOutput.additionalContext).toBe('string');
+      expect(result.hookSpecificOutput.additionalContext.length).toBeGreaterThan(0);
+    });
+
+    it('uses factual assessment phrasing (not imperative) to avoid prompt-injection defenses', () => {
+      const result = runHook({ prompt: 'design a distributed fault-tolerant system' });
+      const ctx = result.hookSpecificOutput.additionalContext;
+      // Must read as a description, not a command.
+      expect(ctx.toLowerCase()).toMatch(/complexity assessment/);
+      // Must NOT contain imperative all-caps directives.
+      expect(ctx).not.toMatch(/USE (LOW|HIGH|MAX|MEDIUM)/);
+      expect(ctx).not.toMatch(/MUST (THINK|USE)/);
+    });
+
+    it('scales guidance strength with complexity score', () => {
+      const trivial = runHook({ prompt: 'What is 2+2?' });
+      const complex = runHook({ prompt: 'Design a distributed fault-tolerant microservice architecture with CQRS event sourcing and saga patterns for multi-tenant billing reconciliation across sharded PostgreSQL replicas' });
+      expect(trivial.hookSpecificOutput.additionalContext).toMatch(/trivial|low/i);
+      expect(complex.hookSpecificOutput.additionalContext).toMatch(/high|very high/i);
+    });
+
+    it('includes the numeric score inside the guidance string for auditability', () => {
+      const result = runHook({ prompt: 'Fix the login bug' });
+      const ctx = result.hookSpecificOutput.additionalContext;
+      expect(ctx).toMatch(new RegExp(`${result.complexity_score}/10`));
+    });
+  });
 });
