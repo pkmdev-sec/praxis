@@ -109,12 +109,17 @@ function cmdInit() {
   }
 
   existing.hooks = existing.hooks ?? {};
-  existing.hooks.UserPromptSubmit = mergeHook(existing.hooks.UserPromptSubmit, {
-    command: `python3 ${allocator}`,
-  });
-  existing.hooks.Stop = mergeHook(existing.hooks.Stop, {
-    command: `python3 ${outcome}`,
-  });
+  // Claude Code expects nested shape: { hooks: [{type, command, timeout}] }
+  // See ~/.claude/settings.json backups for the canonical form. The old
+  // {command: "..."} shape is silently ignored by current Claude Code.
+  existing.hooks.UserPromptSubmit = mergeClaudeHook(
+    existing.hooks.UserPromptSubmit,
+    { type: 'command', command: `python3 ${allocator}`, timeout: 5 },
+  );
+  existing.hooks.Stop = mergeClaudeHook(
+    existing.hooks.Stop,
+    { type: 'command', command: `python3 ${outcome}`, timeout: 5 },
+  );
 
   fs.writeFileSync(settingsPath, JSON.stringify(existing, null, 2) + '\n');
   process.stdout.write(`praxis: wrote ${settingsPath}\n`);
@@ -122,10 +127,21 @@ function cmdInit() {
   return 0;
 }
 
-function mergeHook(existing, entry) {
+function mergeClaudeHook(existing, hookEntry) {
+  // Claude Code's schema: hooks[EventName] is a list of blocks. Each block
+  // has a `hooks` array of {type, command, timeout} dicts and an optional
+  // `matcher`. Praxis's UserPromptSubmit + Stop hooks apply to all events
+  // so we don't set a matcher.
   const arr = Array.isArray(existing) ? existing : [];
-  if (arr.some((h) => h && h.command === entry.command)) return arr;
-  return [...arr, entry];
+  // Idempotent: if any existing block already contains our command, do
+  // nothing so re-running `praxis init` is safe.
+  for (const block of arr) {
+    if (!block || !Array.isArray(block.hooks)) continue;
+    if (block.hooks.some((h) => h && h.command === hookEntry.command)) {
+      return arr;
+    }
+  }
+  return [...arr, { hooks: [hookEntry] }];
 }
 
 // ── verify ──────────────────────────────────────────────────────────────────

@@ -24,3 +24,6 @@ build/
 # Editor artefacts
 .vscode/
 .idea/
+
+# Archived pre-production ledgers (timestamped snapshots)
+assets/archive-*/
