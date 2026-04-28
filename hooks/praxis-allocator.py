@@ -1,61 +1,45 @@
 #!/usr/bin/env python3
 """
-PRAXIS — Thinking Budget Allocator Hook
-UserPromptSubmit hook that analyzes the prompt and sets optimal reasoning budget.
+PRAXIS — Thinking Budget Allocator Hook.
 
-Install in Claude Code settings:
-{
-  "hooks": {
-    "UserPromptSubmit": [
-      {
-        "command": "python3 ~/praxis/hooks/praxis-allocator.py"
+UserPromptSubmit hook that analyses the prompt and emits:
+  - A Claude Code ``hookSpecificOutput.additionalContext`` line so Claude
+    itself sees a factual complexity assessment (not an imperative — factual
+    phrasing dodges prompt-injection defences).
+  - A top-level result object with ``max_thinking_tokens``, ``effort``,
+    ``thinking_config``, ``model``, ``model_family`` for programmatic consumers.
+  - A signed ``alloc`` receipt appended to ``allocation-log.jsonl``.
+
+The receipt is the new bit. Together with ``praxis-outcome.py`` (the Stop
+hook) it forms the Verification Layer: every allocation decision is
+tamper-evidently logged, joinable against the actual outcome, auditable
+locally. See ``docs/receipts.md``.
+
+Install in ``~/.claude/settings.json``::
+
+    {
+      "hooks": {
+        "UserPromptSubmit": [{"command": "python3 ~/praxis/hooks/praxis-allocator.py"}],
+        "Stop":             [{"command": "python3 ~/praxis/hooks/praxis-outcome.py"}]
       }
-    ]
-  }
-}
-
-The hook reads the prompt from stdin (JSON), analyzes complexity, and outputs the
-recommended reasoning budget in the shape the *target Claude model* accepts:
-
-- Claude Opus 4.7 and Mythos Preview → adaptive thinking with `effort` enum.
-  Manual `thinking.budget_tokens` returns a 400 error on these models.
-- Claude Opus 4.6 / Sonnet 4.6 → adaptive thinking with `effort` (preferred),
-  `budget_tokens` still accepted but deprecated.
-- Claude Opus 4.5 and earlier → manual thinking with `budget_tokens` integer.
-
-Model resolution order (first non-empty wins):
-  1. ``$PRAXIS_MODEL`` (explicit override; use for CI/testing)
-  2. stdin JSON ``model`` field (Claude Code supplies this when available)
-  3. ``$ANTHROPIC_MODEL`` env var
-  4. Default: ``claude-sonnet-4-6``
-
-Backward compatibility: the ``max_thinking_tokens`` field is always emitted so
-existing consumers continue to work. New fields (``effort``, ``thinking_config``,
-``model_family``) are additive.
-
-Claude Code integration: when invoked as a ``UserPromptSubmit`` hook, Claude Code
-only acts on documented fields from ``hookSpecificOutput``
-(https://docs.claude.com/en/docs/claude-code/hooks — "UserPromptSubmit decision
-control"). The allocator therefore emits a JSON document whose top level carries
-``hookSpecificOutput.additionalContext`` phrased as a *factual* complexity
-assessment. Imperative system-style phrasing ("USE LOW EFFORT") can trigger
-Claude's prompt-injection defenses; factual phrasing is explicitly endorsed by the
-adaptive-thinking docs ("Tuning thinking behavior" section) at
-https://docs.anthropic.com/en/docs/build-with-claude/adaptive-thinking.
-
-Legacy fields (``max_thinking_tokens``, ``complexity_score``, ``decision``,
-``effort``, ``model``, ``model_family``, ``thinking_config``) remain at the top
-level so Praxis's programmatic API consumers and the JavaScript companion
-libraries under ``lib/`` keep working without modification.
+    }
 """
 
+from __future__ import annotations
+
 import json
+import os
 import re
 import sys
-import os
-import time
 
-# ── Complexity scoring (mirrors complexity-scorer.mjs) ──
+from _praxis_lib import (
+    emit_record,
+    next_turn_id,
+    resolve_session_id,
+)
+
+
+# ── Complexity scoring (mirrors complexity-scorer.mjs) ─────────────────────
 
 KEYWORD_TIERS = {
     "simple": {
@@ -100,10 +84,6 @@ BUDGET_TIERS = {
     9: 32768, 10: 32768,
 }
 
-# Anthropic `effort` enum (https://docs.anthropic.com/en/docs/build-with-claude/effort).
-# Sentinel ``None`` at scores 1–2 means "skip thinking entirely". On Opus 4.7
-# this is expressed by omitting ``thinking`` from the request; on Opus 4.5-style
-# manual thinking it maps to ``budget_tokens=0``.
 EFFORT_TIERS = {
     1: None, 2: None,
     3: "low", 4: "low",
@@ -118,17 +98,20 @@ THINKING_KEYWORDS = {
     "think": 8192,
 }
 
-# Keyword → complexity mapping so effort and budget stay in sync on overrides.
 KEYWORD_TO_SCORE = {
     32768: 10,
     16384: 8,
     8192: 5,
 }
 
-# Factual per-tier guidance strings injected into the conversation via
-# ``hookSpecificOutput.additionalContext``. Phrased as assessments, not
-# imperatives, to avoid tripping Claude's prompt-injection defenses
-# (see PostToolBatch docs in the Claude Code hooks reference).
+TIER_FOR_SCORE = {
+    1: "none", 2: "none",
+    3: "light", 4: "light",
+    5: "medium", 6: "medium",
+    7: "heavy", 8: "heavy",
+    9: "max", 10: "max",
+}
+
 GUIDANCE_BY_SCORE = {
     1: "Praxis complexity assessment: trivial (1/10). Direct answer is appropriate; extended thinking is unlikely to improve quality.",
     2: "Praxis complexity assessment: trivial (2/10). Direct answer is appropriate; extended thinking is unlikely to improve quality.",
@@ -143,22 +126,14 @@ GUIDANCE_BY_SCORE = {
 }
 
 
-# ── Model family detection ─────────────────────────────────────────────────
+# ── Model family detection ──────────────────────────────────────────────────
 
-# Classes of thinking API shape, keyed by model family.
-# ``adaptive_only``: only ``thinking: {type: "adaptive"}`` + ``effort`` accepted;
-#                    manual ``thinking.budget_tokens`` returns 400.
-# ``adaptive_preferred``: both shapes accepted; ``effort`` is recommended,
-#                        ``budget_tokens`` is deprecated.
-# ``manual``: only ``thinking: {type: "enabled", budget_tokens: N}`` is supported.
 MODEL_FAMILIES = [
-    # Most specific patterns first.
     (re.compile(r"^claude-mythos", re.IGNORECASE), "adaptive_only"),
     (re.compile(r"^claude-opus-4-7", re.IGNORECASE), "adaptive_only"),
     (re.compile(r"^claude-opus-4-6", re.IGNORECASE), "adaptive_preferred"),
     (re.compile(r"^claude-sonnet-4-6", re.IGNORECASE), "adaptive_preferred"),
     (re.compile(r"^claude-(opus-4-5|opus-4-1|opus-4\b|sonnet-4-5|sonnet-4\b|haiku-4|sonnet-3-7)", re.IGNORECASE), "manual"),
-    # Haiku 4.5 does not support extended thinking; treat as manual with 0-tokens.
     (re.compile(r"^claude-haiku-4-5", re.IGNORECASE), "manual"),
 ]
 
@@ -166,11 +141,9 @@ DEFAULT_MODEL = "claude-sonnet-4-6"
 
 
 def resolve_model(data: dict) -> str:
-    """Resolve target model from override env, stdin payload, or default."""
     for src in (
         os.environ.get("PRAXIS_MODEL"),
         data.get("model") if isinstance(data, dict) else None,
-        # Claude Code sometimes nests the model under session metadata.
         (data.get("session") or {}).get("model") if isinstance(data, dict) else None,
         os.environ.get("ANTHROPIC_MODEL"),
     ):
@@ -180,35 +153,17 @@ def resolve_model(data: dict) -> str:
 
 
 def classify_model_family(model: str) -> str:
-    """Classify model into one of {adaptive_only, adaptive_preferred, manual}."""
     for pattern, family in MODEL_FAMILIES:
         if pattern.search(model):
             return family
-    # Unknown model → assume the newest adaptive-only contract so we don't
-    # accidentally send deprecated fields to a future model.
     return "adaptive_only"
 
 
 def build_thinking_config(complexity: int, family: str) -> dict:
-    """
-    Build the provider-specific thinking config for a given complexity score
-    and model family. Returned dict maps directly to Anthropic request fields.
-
-    Shape examples:
-        adaptive_only        → {"thinking": {"type": "adaptive"},
-                                "output_config": {"effort": "high"}}
-        adaptive_preferred   → {"thinking": {"type": "adaptive"},
-                                "output_config": {"effort": "medium"},
-                                "legacy_budget_tokens": 8192}
-        manual               → {"thinking": {"type": "enabled",
-                                             "budget_tokens": 8192}}
-    """
     effort = EFFORT_TIERS.get(complexity)
     tokens = BUDGET_TIERS.get(complexity, 8192)
 
     if family == "adaptive_only":
-        # Skip thinking for trivial prompts by omitting the config entirely;
-        # the caller can detect ``"thinking" not in cfg`` and drop the field.
         if effort is None:
             return {}
         return {
@@ -222,24 +177,15 @@ def build_thinking_config(complexity: int, family: str) -> dict:
         return {
             "thinking": {"type": "adaptive"},
             "output_config": {"effort": effort},
-            # Deprecated but still accepted on Opus 4.6 / Sonnet 4.6; emitted
-            # for belt-and-suspenders clients that haven't migrated yet.
             "legacy_budget_tokens": tokens,
         }
 
-    # manual
     if tokens == 0:
         return {"thinking": {"type": "disabled"}}
     return {"thinking": {"type": "enabled", "budget_tokens": tokens}}
 
 
 def detect_thinking_keyword(prompt: str):
-    """
-    Check if the prompt already contains a thinking keyword.
-
-    Uses more specific patterns for 'think' to avoid false positives with
-    natural language (e.g., "I need to think about this").
-    """
     lower = prompt.lower()
     if re.search(r"\bultrathink\b", lower):
         return THINKING_KEYWORDS["ultrathink"]
@@ -254,7 +200,6 @@ def detect_thinking_keyword(prompt: str):
 
 
 def score_complexity(prompt: str) -> int:
-    """Score prompt complexity from 1-10."""
     if not prompt or not isinstance(prompt, str):
         return 1
 
@@ -281,48 +226,28 @@ def score_complexity(prompt: str) -> int:
 
 
 def allocate_tokens(complexity: int) -> int:
-    """Map complexity score to thinking token budget."""
     return BUDGET_TIERS.get(complexity, 8192)
 
 
-def log_allocation(prompt_preview: str, complexity: int, tokens: int,
-                   effort, model: str, family: str) -> None:
-    """Log the allocation decision to a file for tracking."""
-    log_dir = os.path.expanduser("~/praxis/assets")
-    log_file = os.path.join(log_dir, "allocation-log.jsonl")
-    try:
-        os.makedirs(log_dir, exist_ok=True)
-        entry = json.dumps({
-            "prompt_preview": prompt_preview[:80],
-            "complexity": complexity,
-            "tokens": tokens,
-            "effort": effort,
-            "model": model,
-            "model_family": family,
-            "timestamp": time.time(),
-        })
-        with open(log_file, "a") as f:
-            f.write(entry + "\n")
-    except OSError:
-        pass  # Non-critical logging failure
-
-
-def main():
-    """Main hook entry point."""
+def main() -> None:
     try:
         raw = sys.stdin.read()
         if not raw.strip():
             print(json.dumps({}))
             return
 
-        data = json.loads(raw)
-        prompt = data.get("prompt", "") or data.get("message", "") or ""
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as e:
+            print(json.dumps({"error": f"Invalid JSON input: {e}"}), file=sys.stderr)
+            print(json.dumps({}))
+            return
 
+        prompt = data.get("prompt", "") or data.get("message", "") or ""
         if not prompt:
             print(json.dumps({}))
             return
 
-        # Check for explicit thinking keywords first.
         keyword_tokens = detect_thinking_keyword(prompt)
         if keyword_tokens is not None:
             tokens = keyword_tokens
@@ -337,24 +262,42 @@ def main():
         family = classify_model_family(model)
         thinking_config = build_thinking_config(complexity, family)
         effort = EFFORT_TIERS.get(complexity)
+        tier = TIER_FOR_SCORE.get(complexity, "medium")
 
-        log_allocation(prompt, complexity, tokens, effort, model, family)
+        # Identity: stable session id + monotonic turn id. This is the
+        # join key ``praxis-outcome.py`` will pair against.
+        session_id = resolve_session_id(data)
+        turn_id = next_turn_id(session_id)
 
-        # Preserve existing fields for backward compatibility with Praxis's
-        # programmatic API and the JavaScript helpers in ``lib/``.
+        emit_record(
+            ledger_name="allocation-log.jsonl",
+            record_type="alloc",
+            session_id=session_id,
+            turn_id=turn_id,
+            payload={
+                "prompt_preview": prompt[:80],
+                "prompt_len": len(prompt),
+                "complexity": complexity,
+                "tier": tier,
+                "budget_requested": tokens,
+                "effort": effort,
+                "model": model,
+                "model_family": family,
+                "decision": decision,
+            },
+        )
+
+        # Top-level result — backward compatible with pre-1.1 consumers.
         result = {
             "max_thinking_tokens": tokens,
             "complexity_score": complexity,
             "decision": decision,
-            # Additive fields that describe the allocation at the Anthropic
-            # API level (model-aware).
             "effort": effort,
             "model": model,
             "model_family": family,
             "thinking_config": thinking_config,
-            # Claude Code-recognised UserPromptSubmit field. This is the *only*
-            # top-level key Claude Code actually acts on. Phrased as a factual
-            # assessment (not an imperative) per the adaptive-thinking docs.
+            "session_id": session_id,
+            "turn_id": turn_id,
             "hookSpecificOutput": {
                 "hookEventName": "UserPromptSubmit",
                 "additionalContext": GUIDANCE_BY_SCORE.get(complexity, GUIDANCE_BY_SCORE[5]),
@@ -362,19 +305,16 @@ def main():
         }
 
         print(
-            f"[PRAXIS] complexity={complexity} tokens={tokens} "
+            f"[PRAXIS] sid={session_id[:8]} tid={turn_id} "
+            f"complexity={complexity} tier={tier} tokens={tokens} "
             f"effort={effort} model={model} family={family} "
             f"decision={decision}",
             file=sys.stderr,
         )
-
         print(json.dumps(result))
 
-    except json.JSONDecodeError as e:
-        print(json.dumps({"error": f"Invalid JSON input: {str(e)}"}), file=sys.stderr)
-        print(json.dumps({}))
-    except Exception as e:
-        print(json.dumps({"error": f"Unexpected error: {str(e)}"}), file=sys.stderr)
+    except Exception as e:  # pragma: no cover
+        print(json.dumps({"error": f"Unexpected error: {e}"}), file=sys.stderr)
         print(json.dumps({}))
 
 
