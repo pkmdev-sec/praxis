@@ -1,0 +1,3 @@
+# Fixed HMAC fixtures used only to prove Python and JavaScript signature parity.
+90cfbcb4780eea6678c2dc545425d5d94135dff2:tests/receipt.test.mjs:generic-api-key:92
+90cfbcb4780eea6678c2dc545425d5d94135dff2:tests/receipt.test.mjs:generic-api-key:124
